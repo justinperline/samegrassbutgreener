@@ -61,7 +61,9 @@ place_airports <- t(apply(dist, 1, function(row) order(row)[1:3])) %>%
 place_airports_timed <- data.frame()
 
 # Looping through every place and using Mapbox API to calculate travel time to its 3 closest airports
-for (i in 4250:6000) {
+for (i in 8001:10000) {
+  print(i)
+  
   closest_airport_nums <- place_airports %>%
     filter(PlaceNum == i) %>%
     pull(AirportNum)
@@ -91,4 +93,4 @@ for (i in 4250:6000) {
   Sys.sleep(1)
 }
 
-write.csv(place_airports_timed, file = "~/Documents/Code/samegrassbutgreener/timedairports.csv")
+write.csv(place_airports_timed, file = "~/Documents/Github/samegrassbutgreener/data/timedairports.csv")
