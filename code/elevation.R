@@ -28,4 +28,4 @@ us_places <- us_places %>%
   st_drop_geometry() %>%
   select(GEOID, elevation)
 
-write.csv(us_places, "~/Documents/Github/samegrassbutgreener/data/elevation.csv")
+write.csv(us_places, "~/Documents/Github/samegrassbutgreener/data/elevation.csv", row.names = FALSE)

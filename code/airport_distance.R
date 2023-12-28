@@ -97,7 +97,7 @@ place_airports <- t(apply(dist, 1, function(row) order(row)[1:3])) %>%
                names_to = "Rank",
                values_to = "AirportNum") %>%
   left_join(airports %>% select(AirportNum, FAA_ID), by = "AirportNum") %>%
-  st_drop_geometry(.) %>%
+  st_drop_geometry() %>%
   select(-c(geometry, AirportNum))
 
 place_airports_dist <- place_airports <- t(apply(dist, 1, function(row) sort(row)[1:3])) %>%
@@ -128,8 +128,10 @@ min_place_airports_timed <- place_airports_timed %>%
   slice_min(order_by = AirportDist, #for now, using distance over time since it seems more reliable
             with_ties = FALSE)
 
-us_places <- us_places %>%
-  left_join(min_place_airports_timed, by = "GEOID")
+airport_times_dists <- us_places %>%
+  left_join(min_place_airports_timed, by = "GEOID") %>%
+  st_drop_geometry() %>%
+  select(GEOID, FAA_ID, Rank, TravelTime, AirportDist)
 
-write.csv(us_places, file = "~/Documents/Github/samegrassbutgreener/data/airports_matched.csv")
+write.csv(airport_times_dists, file = "~/Documents/Github/samegrassbutgreener/data/airports_matched.csv", row.names = FALSE)
 
