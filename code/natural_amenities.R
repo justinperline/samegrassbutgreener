@@ -84,10 +84,17 @@ spatially_weighted_max <- function(x) {
 
 us_places$TOPO_MAX <- sapply(us_places$geometry, spatially_weighted_max)
 
+#insert progress bar
 library(future.apply)
+library(progressr)
+
 n.cores <- future::availableCores()
 plan(multisession, workers = n.cores)
 chunks <- split(us_places, seq(n.cores))
-us_places$TOPO_MAX <- future_lapply(chunks, function(x) spatially_weighted_max(x$geometry))
+
+with_progress({
+  p <- progressor(along = seq(nrow(us_places)))
+  us_places$TOPO_MAX <- future_lapply(chunks, function(x) spatially_weighted_max(x$geometry))
+})
 
 plan(NULL)
