@@ -61,7 +61,7 @@ place_airports <- t(apply(dist, 1, function(row) order(row)[1:3])) %>%
 place_airports_timed <- data.frame()
 
 # Looping through every place and using Mapbox API to calculate travel time to its 3 closest airports
-for (i in 8001:10000) {
+for (i in 30001:31895) {
   print(i)
   
   closest_airport_nums <- place_airports %>%
@@ -77,18 +77,20 @@ for (i in 8001:10000) {
   times <- mb_matrix(origins = place,
                      destinations = closest_airports)
   
-  times <- times %>%
-    as.data.frame() %>%
-    t() %>%
-    as.data.frame() %>%
-    rownames_to_column("Rank") %>%
-    rename(TravelTime = V1)
-  
-  place_airports_timed_add <- place_airports %>%
-    filter(PlaceNum == i) %>%
-    left_join(times, by = "Rank")
-  
-  place_airports_timed <- bind_rows(place_airports_timed, place_airports_timed_add)
+  if (length(times) > 0) {
+    times <- times %>%
+      as.data.frame() %>%
+      t() %>%
+      as.data.frame() %>%
+      rownames_to_column("Rank") %>%
+      rename(TravelTime = V1)
+    
+    place_airports_timed_add <- place_airports %>%
+      filter(PlaceNum == i) %>%
+      left_join(times, by = "Rank")
+    
+    place_airports_timed <- bind_rows(place_airports_timed, place_airports_timed_add)
+  }
   
   Sys.sleep(1)
 }

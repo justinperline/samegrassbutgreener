@@ -2,6 +2,7 @@ library(tigris)
 library(sf)
 library(dplyr)
 library(readxl)
+library(tibble)
 
 # Recreating topography code dictionary from provided file
 topography_codes <- list(Plains = c("1" = "Flat plains", "2" = "Smooth plains", "3" = "Irregular plains, slight relief", "4" = "Irregular plains"),
@@ -65,15 +66,28 @@ us_places <- places(state = NULL, year = 2022, cb = TRUE) %>%
 # Using intersects here instead of st_within
 us_places_counties <- us_places %>%
   st_join(natural_counties,
-          join = st_intersects,
-          largest = TRUE)
+          join = st_intersects)
 
-#for 3+ county matches, use mode?
-#for 2, use mean?
-#how many places have multiple counties that are actually different topo codes?
-us_places_counties %>%
-  group_by(PlaceNum) %>%
-  filter(n() > 1) %>%
-  mutate(TOPO = as.numeric(TOPO)) %>%
-  filter(max(TOPO) - min(TOPO) > 0)
-  
+
+spatially_weighted_max <- function(x) {
+  x <- st_sfc(x, crs = st_crs(natural_counties))
+  areas <- st_intersection(natural_counties, x) #can filter natural counties down to the ones from the join on 68
+  areas %>%
+    mutate(area = st_area(.)) %>%
+    st_drop_geometry(.) %>%
+    group_by(TOPO) %>%
+    summarize(area = sum(area)) %>%
+    arrange(desc(area)) %>%
+    slice(1) %>%
+    pull(TOPO)
+}
+
+us_places$TOPO_MAX <- sapply(us_places$geometry, spatially_weighted_max)
+
+library(future.apply)
+n.cores <- future::availableCores()
+plan(multisession, workers = n.cores)
+chunks <- split(us_places, seq(n.cores))
+us_places$TOPO_MAX <- future_lapply(chunks, function(x) spatially_weighted_max(x$geometry))
+
+plan(NULL)
