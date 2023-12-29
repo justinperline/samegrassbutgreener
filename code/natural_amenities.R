@@ -2,7 +2,9 @@ library(tigris)
 library(sf)
 library(dplyr)
 library(readxl)
+library(mapview)
 library(tibble)
+library(furrr)
 
 # Recreating topography code dictionary from provided file
 topography_codes <- list(Plains = c("1" = "Flat plains", "2" = "Smooth plains", "3" = "Irregular plains, slight relief", "4" = "Irregular plains"),
@@ -26,31 +28,19 @@ natural %>%
 # Merging natural amenities data with spatial data
 # Have to download old county data because some records do not match 2022 county codes
 counties <- counties(cb = TRUE, year = 2022) %>%
-  mutate(GEOID = ifelse(GEOID == "12086", "12025", GEOID)) #Miami-Dade name change caused code change
-old_counties <- counties(cb = TRUE, year = 2010) %>%
-  mutate(GEOID = paste0(STATE, COUNTY))
+  filter(STUSPS != "CT") %>% #Connecticut counties became "Planning Regions" in 2022
+  mutate(GEOID = case_when(GEOID == "12086" ~ "12025", #Dade -> Miami-Dade
+                           GEOID == "46102" ~ "46113", #Shannon -> Oglala Lakota
+                           TRUE ~ GEOID)) %>%
+  bind_rows(counties(state = "CT", cb = TRUE, year = 2021))
 
 natural_counties <- natural %>%
   left_join(counties, by = c("FIPS Code" = "GEOID")) %>%
-  st_as_sf()
-
-missing_counties <- natural_counties %>%
-  filter(is.na(STATE_NAME)) %>%
-  pull(`FIPS Code`)
-
-resolved_counties <- natural %>%
-  filter(`FIPS Code` %in% missing_counties) %>%
-  inner_join(old_counties, by = c("FIPS Code" = "GEOID"))
-
-natural_counties <- natural_counties %>%
-  filter(!is.na(STATE_NAME)) %>%
-  bind_rows(resolved_counties) %>%
+  st_as_sf() %>%
   select(`FIPS Code`, NAME, STUSPS, TOPO)
 
 # Plotting county by topography code
-ggplot(natural_counties) +
-  geom_sf(aes(fill = TOPO)) +
-  theme_void()
+mapview(natural_counties, zcol = "TOPO")
 
 # Downloading every census-designated place in the US
 # Removing islands, territories
@@ -59,42 +49,61 @@ us_places <- places(state = NULL, year = 2022, cb = TRUE) %>%
                           66, #Guam
                           69, #Mariana Islands
                           72, #Puerto Rico
-                          78))) %>% #Virgin Islands
-  rownames_to_column("PlaceNum")
+                          78))) #Virgin Islands
 
-# Spatial join of place to county in order to match TOPO code
-# Using intersects here instead of st_within
-us_places_counties <- us_places %>%
-  st_join(natural_counties,
-          join = st_intersects)
-
-
-spatially_weighted_max <- function(x) {
-  x <- st_sfc(x, crs = st_crs(natural_counties))
-  areas <- st_intersection(natural_counties, x) #can filter natural counties down to the ones from the join on 68
-  areas %>%
-    mutate(area = st_area(.)) %>%
-    st_drop_geometry(.) %>%
-    group_by(TOPO) %>%
-    summarize(area = sum(area)) %>%
-    arrange(desc(area)) %>%
-    slice(1) %>%
-    pull(TOPO)
+# Function to limit spatial join to nearby counties from each state
+large_spatial_join <- function(state) {
+  
+  us_places_state <- us_places %>%
+    filter(STUSPS == state)
+    
+    natural_counties_state <- natural_counties %>%
+      st_filter(us_places_state,
+                .predicate = st_is_within_distance,
+                dist = 100000)
+    
+    us_places_counties <- us_places_state %>%
+      st_join(natural_counties_state,
+            join = st_intersects,
+            largest = TRUE)
+    
+    # In case of failure, try this
+    # intersections <- st_intersection(us_places_state, natural_counties_state)
+    # intersections <- intersections %>%
+    #   filter(st_is_valid(geometry) == TRUE) %>%
+    #   mutate(AREA = as.numeric(st_area(geometry))) %>%
+    #   group_by(GEOID) %>%
+    #   slice_max(order_by = AREA)
+  
+  return(us_places_counties)
 }
 
-us_places$TOPO_MAX <- sapply(us_places$geometry, spatially_weighted_max)
+# Using parallel processing to attempt this spatial join one state at a time
+n_cores <- future::availableCores()
+plan(multisession, workers = n_cores)
 
-#insert progress bar
-library(future.apply)
-library(progressr)
+us_places_counties <- future_map(unique(us_places$STUSPS), large_spatial_join) %>%
+  bind_rows()
 
-n.cores <- future::availableCores()
-plan(multisession, workers = n.cores)
-chunks <- split(us_places, seq(n.cores))
+plan(sequential)
 
-with_progress({
-  p <- progressor(along = seq(nrow(us_places)))
-  us_places$TOPO_MAX <- future_lapply(chunks, function(x) spatially_weighted_max(x$geometry))
-})
+topo <- us_places_counties %>%
+  st_drop_geometry() %>%
+  select(GEOID, TOPO)
 
-plan(NULL)
+write.csv(topo, file = "~/Documents/Github/samegrassbutgreener/data/topo.csv", row.names = FALSE)
+
+# spatially_weighted_max <- function(x) {
+#   x <- st_sfc(x, crs = st_crs(natural_counties))
+#   areas <- st_intersection(natural_counties, x) #can filter natural counties down to the ones from the join on 68
+#   areas %>%
+#     mutate(area = st_area(.)) %>%
+#     st_drop_geometry(.) %>%
+#     group_by(TOPO) %>%
+#     summarize(area = sum(area)) %>%
+#     arrange(desc(area)) %>%
+#     slice(1) %>%
+#     pull(TOPO)
+# }
+# 
+# us_places$TOPO_MAX <- sapply(us_places$geometry, spatially_weighted_max)
