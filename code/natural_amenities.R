@@ -10,8 +10,10 @@ library(furrr)
 topography_codes <- list(Plains = c("1" = "Flat plains", "2" = "Smooth plains", "3" = "Irregular plains, slight relief", "4" = "Irregular plains"),
                          Tablelands = c("5" = "Tablelands, moderate relief", "6" = "Tablelands, considerable relief", "7" = "Tablelands, high relief", "8" = "Tablelands, very high relief"),
                          Plains_with_Hills_or_Mountains = c("9" = "Plains with hills", "10" = "Plains with high hills", "11" = "Plains with low mountains", "12" = "Plains with high mountains"),
-                         Open_Hills_and_Mountains = c("13" = "Open low hills", "14" = "Open hills", "15" = "Open low mountains", "16" = "Open high mountains"),
+                         Open_Hills_and_Mountains = c("13" = "Open low hills", "14" = "Open hills", "15" = "Open high hills", "16" = "Open low mountains", "17" = "Open high mountains"),
                          Hills_and_Mountains = c("18" = "Hills", "19" = "High hills", "20" = "Low mountains", "21" = "High mountains"))
+topography_codes_df <- stack(topography_codes) %>%
+  rownames_to_column("Num")
 
 # Reading in data
 natural <- read_excel("~/Documents/Github/samegrassbutgreener/data/natamenf_1_.xlsx",
@@ -89,7 +91,10 @@ plan(sequential)
 
 topo <- us_places_counties %>%
   st_drop_geometry() %>%
-  select(GEOID, TOPO)
+  select(GEOID, TOPO) %>%
+  left_join(topography_codes_df, by = c("TOPO" = "Num")) %>%
+  rename(TOPO_DEF = values,
+         TOPO_CAT = ind)
 
 write.csv(topo, file = "~/Documents/Github/samegrassbutgreener/data/topo.csv", row.names = FALSE)
 
