@@ -29,6 +29,7 @@ us_places <- places(state = NULL, year = 2022, cb = TRUE) %>%
                           78))) #Virgin Islands
 
 # Function to limit spatial join to nearby counties from each state
+# Using st_intersection() to calculate the area overlap rather than allowing the spatial join to auto-select the largest
 large_spatial_join <- function(state) {
   
   us_places_state <- us_places %>%
@@ -49,10 +50,15 @@ large_spatial_join <- function(state) {
     filter(st_is_valid(geometry) == TRUE) %>%
     mutate(AREA = as.numeric(st_area(geometry))) %>%
     group_by(GEOID) %>%
-    mutate(PCT_AREA = AREA / sum(AREA))
-    summarize()
-  
-  return(us_places_counties)
+    mutate(PCT_AREA = AREA / sum(AREA)) %>% #assuming % of pop living in each county within each place is proportional to land %
+    # probably a poor assumption
+    summarize(TOT_DEM = weighted.mean(votes_dem, PCT_AREA),
+              TOT_GOP = weighted.mean(votes_gop, PCT_AREA),
+              TOT_VOTES = weighted.mean(total_votes, PCT_AREA)) %>%
+    mutate(PCT_DEM = TOT_DEM / TOT_VOTES,
+           PCT_GOP = TOT_GOP / TOT_VOTES)
+    
+  return(intersections)
 }
 
 # Using parallel processing to attempt this spatial join one state at a time
@@ -65,8 +71,7 @@ us_places_counties <- future_map(unique(us_places$STUSPS), large_spatial_join) %
 plan(sequential)
 
 place_votes <- us_places_counties %>%
-  select(GEOID.x, per_gop, per_dem) %>%
-  rename(GEOID = GEOID.x) %>%
+  select(GEOID, PCT_GOP, PCT_DEM) %>%
   st_drop_geometry()
 
 write.csv(place_votes, file = "~/Documents/Github/samegrassbutgreener/data/votes.csv", row.names = FALSE)
