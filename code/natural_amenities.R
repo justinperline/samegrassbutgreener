@@ -18,7 +18,8 @@ topography_codes_df <- stack(topography_codes) %>%
 # Reading in data
 natural <- read_excel("~/Documents/Github/samegrassbutgreener/data/natamenf_1_.xlsx",
                       range = "A105:V3216") %>%
-  mutate(TOPO = as.factor(`topography code`))
+  mutate(TOPO = as.factor(`topography code`)) %>%
+  rename(REL_HUMID = `July, 1941-70...11`)
 
 # Checking distribution of codes
 natural %>%
@@ -39,7 +40,7 @@ counties <- counties(cb = TRUE, year = 2022) %>%
 natural_counties <- natural %>%
   left_join(counties, by = c("FIPS Code" = "GEOID")) %>%
   st_as_sf() %>%
-  select(`FIPS Code`, NAME, STUSPS, TOPO)
+  select(`FIPS Code`, NAME, STUSPS, TOPO, REL_HUMID)
 
 # Plotting county by topography code
 mapview(natural_counties, zcol = "TOPO")
@@ -91,7 +92,7 @@ plan(sequential)
 
 topo <- us_places_counties %>%
   st_drop_geometry() %>%
-  select(GEOID, TOPO) %>%
+  select(GEOID, TOPO, REL_HUMID) %>%
   left_join(topography_codes_df, by = c("TOPO" = "Num")) %>%
   rename(TOPO_DEF = values,
          TOPO_CAT = ind)
