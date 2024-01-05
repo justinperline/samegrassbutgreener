@@ -1,6 +1,8 @@
 library(tigris)
 library(sf)
 library(dplyr)
+library(furrr)
+
 # library(raster)
 # library(rgeoboundaries)
 # library(zonal)
@@ -74,3 +76,57 @@ county_climates <- counties %>%
   left_join(july_temp, by = c("COUNTYID" = "ID")) %>%
   left_join(precip, by = c("COUNTYID" = "ID")) %>%
   mutate(Seasonality = JulyTemp - JanTemp)
+
+
+# Downloading every census-designated place in the US
+# Removing islands, territories
+us_places <- places(state = NULL, year = 2022, cb = TRUE) %>%
+  filter(!(STATEFP %in% c(60, #American Samoa
+                          66, #Guam
+                          69, #Mariana Islands
+                          72, #Puerto Rico
+                          78))) #Virgin Islands
+
+# Function to limit spatial join to nearby counties from each state
+large_spatial_join <- function(state) {
+  
+  us_places_state <- us_places %>%
+    filter(STUSPS == state)
+  
+  climate_counties_state <- county_climates %>%
+    st_filter(us_places_state,
+              .predicate = st_is_within_distance,
+              dist = 100000)
+  
+  us_places_counties <- us_places_state %>%
+    st_join(climate_counties_state,
+            join = st_intersects,
+            largest = TRUE)
+  
+  # In case of failure, try this
+  # intersections <- st_intersection(us_places_state, natural_counties_state)
+  # intersections <- intersections %>%
+  #   filter(st_is_valid(geometry) == TRUE) %>%
+  #   mutate(AREA = as.numeric(st_area(geometry))) %>%
+  #   group_by(GEOID) %>%
+  #   slice_max(order_by = AREA)
+  
+  return(us_places_counties)
+}
+
+# Using parallel processing to attempt this spatial join one state at a time
+n_cores <- future::availableCores()
+plan(multisession, workers = n_cores)
+
+us_places_counties <- future_map(unique(us_places$STUSPS), large_spatial_join) %>%
+  bind_rows()
+
+plan(sequential)
+
+climate <- us_places_counties %>%
+  st_drop_geometry() %>%
+  select(GEOID.x, JanTemp, JulyTemp, Precipitation) %>%
+  rename(GEOID = GEOID.x)
+
+write.csv(climate, file = "~/Documents/Github/samegrassbutgreener/data/climate.csv", row.names = FALSE)
+
